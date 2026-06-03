@@ -157,6 +157,16 @@ agent = Agent(
     ],
 )
 
+# Groq's tool-schema validator treats an empty `properties: {}` as missing and then
+# rejects the lingering `required: []` key ("'required' present but 'properties' is
+# missing"). OpenAI/Ollama tolerate it, so this only bites in the hosted demo. Strip
+# the empty `required` from every no-arg tool so the gesture tools work on Groq too.
+for _tool in agent.tools:
+    _schema = getattr(_tool, "params_json_schema", None)
+    if isinstance(_schema, dict) and not _schema.get("properties") and not _schema.get("required"):
+        _schema.pop("required", None)
+        _schema["properties"] = {}
+
 # ── Camera ────────────────────────────────────────────────────────────────────
 
 _camera: CameraController | None = None
