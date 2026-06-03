@@ -1,0 +1,9 @@
+# Slim dependency set for the public cloud demo (DEMO_MODE).
+# The webcam tracking runs in the browser via MediaPipe Web, so the server does
+# NOT need opencv-python / mediapipe — keeping the image small and fast to build.
+fastapi>=0.115
+uvicorn[standard]>=0.30
+openai-agents>=0.0.11
+openai>=1.57
+pyserial>=3.5
+python-dotenv>=1.0

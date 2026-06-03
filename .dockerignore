@@ -1,0 +1,11 @@
+.git
+.venv
+__pycache__
+*.pyc
+*.egg-info
+hand_landmarker.task
+.DS_Store
+.env
+.python-version
+uv.lock
+README.md

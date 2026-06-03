@@ -1,0 +1,19 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# MediaPipe model (downloaded at runtime)
+hand_landmarker.task
+
+# macOS
+.DS_Store
+
+# Local env / secrets
+.env

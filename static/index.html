@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HAND CTL // LLM AGENT</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --g:      #00ff41;
+      --g-dim:  #00882a;
+      --g-dark: #001f08;
+      --g-bg:   #060e06;
+      --amber:  #ffc200;
+      --cyan:   #00d4ff;
+      --violet: #bf5fff;
+      --red:    #ff3c3c;
+      --border: #0d3d14;
+    }
+
+    body {
+      background: var(--g-bg);
+      color: var(--g);
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 13px;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* CRT scanlines */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px, transparent 3px,
+        rgba(0,0,0,0.06) 3px, rgba(0,0,0,0.06) 4px
+      );
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /* ── Header ─────────────────────────────────────────── */
+    header {
+      flex-shrink: 0;
+      background: #040a04;
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px 0;
+    }
+
+    .ascii-title {
+      font-size: 11px;
+      line-height: 1.15;
+      white-space: pre;
+      color: var(--g);
+      text-shadow: 0 0 8px var(--g);
+    }
+
+    .status-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      margin-top: 7px;
+      font-size: 11px;
+      color: var(--g-dim);
+      letter-spacing: 0.05em;
+    }
+
+    .dot {
+      display: inline-block;
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--red);
+      margin-right: 5px;
+      vertical-align: middle;
+    }
+    .dot.on { background: var(--g); box-shadow: 0 0 6px var(--g); }
+
+    /* ── Mode tabs ───────────────────────────────────────── */
+    .tabs {
+      display: flex;
+      gap: 0;
+      margin-top: 10px;
+    }
+
+    .tab {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-bottom: none;
+      color: var(--g-dim);
+      font-family: inherit;
+      font-size: 12px;
+      letter-spacing: 0.1em;
+      padding: 5px 20px;
+      cursor: pointer;
+      transition: all 0.12s;
+      position: relative;
+      bottom: -1px;
+    }
+    .tab:hover { color: var(--g); border-color: var(--g-dim); }
+    .tab.active {
+      color: var(--g);
+      border-color: var(--g);
+      background: var(--g-bg);
+      text-shadow: 0 0 6px var(--g);
+    }
+
+    /* ── Panels ──────────────────────────────────────────── */
+    .panel { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+    .panel.active { display: flex; }
+
+    /* ── CHAT panel ──────────────────────────────────────── */
+    #chat {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 16px 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      scroll-behavior: smooth;
+    }
+
+    #chat::-webkit-scrollbar { width: 4px; }
+    #chat::-webkit-scrollbar-track { background: var(--g-bg); }
+    #chat::-webkit-scrollbar-thumb { background: var(--g-dim); border-radius: 2px; }
+
+    .divider { border: none; border-top: 1px dashed var(--border); margin: 4px 0; }
+
+    .row {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: 6px;
+      line-height: 1.55;
+      animation: fadeIn 0.12s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(2px); } }
+
+    .row-label { font-size: 11px; white-space: nowrap; padding-top: 1px; user-select: none; }
+    .row-body  { word-break: break-word; }
+
+    .row-sys   .row-label, .row-sys   .row-body  { color: var(--g-dim); }
+    .row-user  .row-label { color: var(--amber); }
+    .row-user  .row-body  { color: var(--amber); font-weight: bold; }
+    .row-agent .row-label, .row-agent .row-body  { color: var(--g); }
+    .row-tool  .row-label, .row-tool  .row-body  { color: var(--cyan); font-style: italic; }
+    .row-result .row-label, .row-result .row-body { color: var(--violet); }
+    .row-err  .row-label, .row-err  .row-body    { color: var(--red); }
+
+    .cursor::after {
+      content: '█';
+      animation: blink 0.9s step-end infinite;
+      color: var(--g);
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    /* Quick chips */
+    #quick {
+      flex-shrink: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 6px 14px;
+      border-top: 1px solid var(--border);
+      background: #040a04;
+    }
+
+    .chip {
+      font-family: inherit;
+      font-size: 11px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--g-dim);
+      padding: 2px 10px;
+      cursor: pointer;
+      transition: all 0.1s;
+    }
+    .chip:hover { border-color: var(--g); color: var(--g); }
+
+    /* Input footer */
+    footer {
+      flex-shrink: 0;
+      background: #040a04;
+      border-top: 1px solid var(--border);
+      padding: 9px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .prompt-sym { color: var(--g); font-size: 16px; font-weight: bold; text-shadow: 0 0 6px var(--g); user-select: none; }
+
+    #inp {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--amber);
+      font-family: inherit;
+      font-size: 13px;
+      caret-color: var(--g);
+    }
+    #inp::placeholder { color: #1a3d1a; }
+    #inp:disabled { opacity: 0.5; }
+
+    .btn {
+      background: transparent;
+      border: 1px solid var(--g-dim);
+      color: var(--g);
+      font-family: inherit;
+      font-size: 12px;
+      padding: 4px 14px;
+      cursor: pointer;
+      letter-spacing: 0.08em;
+      transition: background 0.12s, color 0.12s;
+    }
+    .btn:hover:not(:disabled) { background: var(--g); color: #000; }
+    .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .btn.danger { border-color: var(--red); color: var(--red); }
+    .btn.danger:hover:not(:disabled) { background: var(--red); color: #000; }
+
+    /* ── CAMERA panel ────────────────────────────────────── */
+    #panel-cam {
+      padding: 12px 16px;
+      gap: 12px;
+    }
+
+    .cam-layout {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 280px;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .cam-feed-wrap {
+      border: 1px solid var(--border);
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    #cam-img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+
+    .cam-placeholder {
+      color: var(--g-dim);
+      font-size: 12px;
+      text-align: center;
+      line-height: 2;
+    }
+
+    /* Sidebar */
+    .cam-sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .cam-panel {
+      border: 1px solid var(--border);
+      padding: 10px 12px;
+      background: #040a04;
+    }
+
+    .cam-panel-title {
+      font-size: 11px;
+      color: var(--g-dim);
+      letter-spacing: 0.1em;
+      margin-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 5px;
+    }
+
+    /* Finger angle bars */
+    .finger-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .finger-name {
+      font-size: 11px;
+      color: var(--g-dim);
+      width: 46px;
+      flex-shrink: 0;
+    }
+
+    .finger-bar-bg {
+      flex: 1;
+      height: 8px;
+      background: var(--g-dark);
+      border: 1px solid var(--border);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .finger-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--g);
+      transition: width 0.08s linear;
+      box-shadow: 0 0 4px var(--g);
+    }
+
+    .finger-val {
+      font-size: 11px;
+      color: var(--g);
+      width: 34px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .cam-controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .cam-status {
+      font-size: 11px;
+      padding: 6px 0;
+    }
+    .cam-status span { color: var(--g-dim); }
+    .cam-status .live { color: var(--g); animation: blink 1s step-end infinite; }
+    .cam-status .offline { color: var(--red); }
+
+    /* detection badge */
+    .detect-badge {
+      font-size: 11px;
+      padding: 3px 10px;
+      border: 1px solid var(--border);
+      color: var(--g-dim);
+      text-align: center;
+      transition: all 0.2s;
+    }
+    .detect-badge.on {
+      border-color: var(--g);
+      color: var(--g);
+      text-shadow: 0 0 6px var(--g);
+    }
+
+    /* ── CHAT layout w/ hand sidebar ─────────────────────── */
+    .chat-layout {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      min-height: 0;
+    }
+    .chat-col {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      min-width: 0;
+      border-right: 1px solid var(--border);
+    }
+    .hand-col {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 12px;
+      min-height: 0;
+      overflow-y: auto;
+      background: #040a04;
+    }
+    .hand-col .cam-panel { background: #060e06; }
+
+    /* ── Virtual hand SVG ────────────────────────────────── */
+    .hand-stage-panel { flex: 1; display: flex; flex-direction: column; }
+    #hand-stage {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 200px;
+    }
+    #hand-stage svg { width: 100%; height: 100%; max-height: 340px; }
+    .hand-seg {
+      fill: #0a2810;
+      stroke: var(--g);
+      stroke-width: 2.5;
+      filter: drop-shadow(0 0 2px var(--g));
+    }
+    .hand-joint { fill: var(--g); filter: drop-shadow(0 0 3px var(--g)); }
+    .hand-palm {
+      fill: #081e0c;
+      stroke: var(--g);
+      stroke-width: 2.5;
+      filter: drop-shadow(0 0 3px var(--g));
+    }
+    .hand-pose-lbl {
+      font-size: 11px;
+      color: var(--g-dim);
+      text-align: center;
+      letter-spacing: 0.12em;
+      margin-top: 4px;
+    }
+    .hand-pose-lbl b { color: var(--g); text-shadow: 0 0 6px var(--g); }
+
+    @media (max-width: 720px) {
+      .chat-layout { grid-template-columns: 1fr; }
+      .hand-col { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────── -->
+<header>
+  <div class="ascii-title">╔══════════════════════════════════════════════════════════════╗
+║   ██╗  ██╗ █████╗ ███╗  ██╗██████╗      ██████╗████████╗██╗     ║
+║   ██║  ██║██╔══██╗████╗ ██║██╔══██╗    ██╔════╝╚══██╔══╝██║     ║
+║   ███████║███████║██╔██╗██║██║  ██║    ██║        ██║   ██║     ║
+║   ██╔══██║██╔══██║██║╚████║██║  ██║    ██║        ██║   ██║     ║
+║   ██║  ██║██║  ██║██║ ╚███║██████╔╝    ╚██████╗   ██║   ███████╗║
+║   ARDUINO SERVO AGENT  //  NATURAL LANGUAGE HAND CONTROL  v0.2   ║
+╚══════════════════════════════════════════════════════════════════╝</div>
+  <div class="status-bar">
+    <span><span class="dot" id="dot-ard"></span><span id="lbl-ard">ARDUINO: —</span></span>
+    <span><span class="dot on"></span><span id="lbl-llm">LLM: —</span></span>
+    <span id="lbl-port">PORT: —</span>
+  </div>
+  <div class="tabs">
+    <button class="tab active" data-panel="panel-chat">[ CHAT MODE ]</button>
+    <button class="tab"        data-panel="panel-cam" >[ CAMERA MODE ]</button>
+  </div>
+</header>
+
+<!-- ══════════════ CHAT PANEL ══════════════ -->
+<div class="panel active" id="panel-chat">
+  <div class="chat-layout">
+    <div class="chat-col">
+      <div id="chat">
+        <div class="row row-sys">
+          <span class="row-label">[SYSTEM]</span>
+          <span class="row-body">Hand Control Agent online. Type a command in natural language.<br>
+          Try: <em>"point your index finger"</em> &nbsp;·&nbsp; <em>"make a fist"</em> &nbsp;·&nbsp; <em>"thumbs up"</em> &nbsp;·&nbsp; <em>"rock on"</em></span>
+        </div>
+      </div>
+
+      <div id="quick">
+        <button class="chip" data-cmd="open your hand">OPEN HAND</button>
+        <button class="chip" data-cmd="make a fist">FIST</button>
+        <button class="chip" data-cmd="point your index finger">POINT</button>
+        <button class="chip" data-cmd="thumbs up">THUMBS UP</button>
+        <button class="chip" data-cmd="peace sign">PEACE</button>
+        <button class="chip" data-cmd="rock on">ROCK ON</button>
+        <button class="chip" data-cmd="set all fingers to 90 degrees">HALF-CURL</button>
+      </div>
+
+      <footer>
+        <span class="prompt-sym">&gt;</span>
+        <input id="inp" type="text" placeholder="issue a command to the hand…" autofocus autocomplete="off" />
+        <button id="btn" class="btn">SEND</button>
+      </footer>
+    </div>
+
+    <div class="hand-col">
+      <div class="cam-panel hand-stage-panel">
+        <div class="cam-panel-title">// VIRTUAL HAND</div>
+        <div id="hand-stage"><!-- SVG injected by JS --></div>
+        <div class="hand-pose-lbl">POSE: <b id="hand-pose">OPEN</b></div>
+      </div>
+      <div class="cam-panel">
+        <div class="cam-panel-title">// FINGER ANGLES</div>
+        <div id="chat-finger-bars"><!-- generated by JS --></div>
+        <div style="font-size:10px;color:var(--g-dark);margin-top:8px;">
+          0° = EXTENDED &nbsp;·&nbsp; 180° = CURLED
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ CAMERA PANEL ══════════════ -->
+<div class="panel" id="panel-cam">
+  <div class="cam-layout">
+
+    <!-- Video feed -->
+    <div class="cam-feed-wrap">
+      <div class="cam-placeholder" id="cam-placeholder">
+        ┌─────────────────────┐<br>
+        │                     │<br>
+        │   CAMERA OFFLINE    │<br>
+        │                     │<br>
+        │  [ START ] to begin │<br>
+        │  live tracking      │<br>
+        │                     │<br>
+        └─────────────────────┘
+      </div>
+      <img id="cam-img" src="" alt="" style="display:none" />
+      <!-- Browser-side tracking (demo): webcam → canvas w/ skeleton overlay -->
+      <video id="cam-video" playsinline muted style="display:none"></video>
+      <canvas id="cam-canvas" style="display:none;width:100%;height:100%;object-fit:contain"></canvas>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="cam-sidebar">
+
+      <!-- Controls -->
+      <div class="cam-panel">
+        <div class="cam-panel-title">// CAMERA CONTROL</div>
+        <div class="cam-status">
+          STATUS: <span id="cam-status-lbl" class="offline">OFFLINE</span>
+        </div>
+        <div class="detect-badge" id="detect-badge">NO HAND DETECTED</div>
+        <br>
+        <div class="cam-controls">
+          <button class="btn" id="cam-start">START</button>
+          <button class="btn danger" id="cam-stop" disabled>STOP</button>
+        </div>
+      </div>
+
+      <!-- Finger angles -->
+      <div class="cam-panel" style="flex:1">
+        <div class="cam-panel-title">// LIVE FINGER ANGLES</div>
+        <div id="finger-bars">
+          <!-- generated by JS -->
+        </div>
+        <div style="font-size:10px;color:var(--g-dark);margin-top:8px;">
+          0° = EXTENDED &nbsp;·&nbsp; 180° = CURLED
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  /* ── Tab switching ───────────────────────────────────── */
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById(tab.dataset.panel).classList.add('active');
+    });
+  });
+
+  /* ── Finger bar init (reusable across panels) ────────── */
+  const FINGER_NAMES = ['THUMB', 'INDEX', 'MIDDLE', 'RING', 'PINKY'];
+
+  function makeBars(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return [];
+    const out = [];
+    FINGER_NAMES.forEach(name => {
+      const row = document.createElement('div');
+      row.className = 'finger-row';
+      row.innerHTML = `
+        <span class="finger-name">${name}</span>
+        <div class="finger-bar-bg"><div class="finger-bar-fill"></div></div>
+        <span class="finger-val">0°</span>`;
+      container.appendChild(row);
+      out.push({
+        fill: row.querySelector('.finger-bar-fill'),
+        val:  row.querySelector('.finger-val'),
+      });
+    });
+    return out;
+  }
+
+  const camBars  = makeBars('finger-bars');       // camera panel
+  const chatBars = makeBars('chat-finger-bars');  // chat panel (next to hand)
+
+  function updateBars(angles, bars) {
+    angles.forEach((a, i) => {
+      if (!bars[i]) return;
+      bars[i].fill.style.width = `${(a / 180) * 100}%`;
+      bars[i].val.textContent  = `${a}°`;
+    });
+  }
+
+  /* ── Virtual robotic hand (SVG) ──────────────────────── */
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  // Order matches the servo angle array: [thumb, index, middle, ring, pinky]
+  const HAND = [
+    { knuckle: [54, 206], base: -52, w: 17, seg: [30, 24],     curlMax: [48, 55] },
+    { knuckle: [74, 150], base:  -7, w: 16, seg: [34, 26, 20], curlMax: [85, 95, 75] },
+    { knuckle: [99, 146], base:   0, w: 16, seg: [38, 30, 22], curlMax: [85, 95, 75] },
+    { knuckle: [123,150], base:   6, w: 16, seg: [34, 28, 20], curlMax: [85, 95, 75] },
+    { knuckle: [146,158], base:  13, w: 13, seg: [27, 22, 16], curlMax: [85, 95, 72] },
+  ];
+
+  const handJoints = [];  // handJoints[finger][joint] = { el, ty, curlMax }
+
+  (function buildHand() {
+    const stage = document.getElementById('hand-stage');
+    if (!stage) return;
+    const svg = document.createElementNS(SVGNS, 'svg');
+    svg.setAttribute('viewBox', '0 0 200 280');
+
+    // Palm + wrist
+    const palm = document.createElementNS(SVGNS, 'path');
+    palm.setAttribute('class', 'hand-palm');
+    palm.setAttribute('d',
+      'M55 250 Q50 165 62 152 L142 158 Q152 170 150 250 Q150 268 132 268 L73 268 Q55 268 55 250 Z');
+    svg.appendChild(palm);
+
+    HAND.forEach((f, fi) => {
+      const outer = document.createElementNS(SVGNS, 'g');
+      outer.setAttribute('transform', `translate(${f.knuckle[0]},${f.knuckle[1]}) rotate(${f.base})`);
+      svg.appendChild(outer);
+
+      let parent = outer;
+      const joints = [];
+      f.seg.forEach((L, j) => {
+        const g = document.createElementNS(SVGNS, 'g');
+        const ty = j === 0 ? 0 : -f.seg[j - 1];
+        parent.appendChild(g);
+
+        const rect = document.createElementNS(SVGNS, 'rect');
+        rect.setAttribute('class', 'hand-seg');
+        rect.setAttribute('x', -f.w / 2);
+        rect.setAttribute('y', -L);
+        rect.setAttribute('width', f.w);
+        rect.setAttribute('height', L);
+        rect.setAttribute('rx', f.w / 2);
+        g.appendChild(rect);
+
+        const pivot = document.createElementNS(SVGNS, 'circle');
+        pivot.setAttribute('class', 'hand-joint');
+        pivot.setAttribute('r', f.w * 0.42);
+        g.appendChild(pivot);
+
+        joints.push({ el: g, ty, curlMax: f.curlMax[j] });
+        parent = g;
+      });
+      handJoints.push(joints);
+    });
+
+    stage.appendChild(svg);
+  })();
+
+  function renderHand(angles) {
+    handJoints.forEach((joints, fi) => {
+      const curl = Math.max(0, Math.min(180, angles[fi] || 0)) / 180;
+      joints.forEach(j => {
+        j.el.setAttribute('transform', `translate(0,${j.ty}) rotate(${(curl * j.curlMax).toFixed(1)})`);
+      });
+    });
+  }
+
+  function poseName(a) {
+    const ext = i => a[i] < 60, curl = i => a[i] > 120;
+    if ([0,1,2,3,4].every(ext))                                   return 'OPEN HAND';
+    if ([0,1,2,3,4].every(curl))                                  return 'FIST';
+    if (curl(0) && ext(1) && curl(2) && curl(3) && curl(4))       return 'POINTING';
+    if (curl(0) && ext(1) && ext(2) && curl(3) && curl(4))        return 'PEACE';
+    if (ext(0) && curl(1) && curl(2) && curl(3) && curl(4))       return 'THUMBS UP';
+    if (curl(0) && ext(1) && curl(2) && curl(3) && ext(4))        return 'ROCK ON';
+    return 'CUSTOM';
+  }
+
+  const poseLbl = document.getElementById('hand-pose');
+
+  // Single entry point: drive the SVG hand + chat bars + pose label.
+  function setAngles(angles) {
+    renderHand(angles);
+    updateBars(angles, chatBars);
+    if (poseLbl) poseLbl.textContent = poseName(angles);
+  }
+
+  setAngles([0, 0, 0, 0, 0]);
+
+  /* ── Camera control ──────────────────────────────────── */
+  const camImg       = document.getElementById('cam-img');
+  const camHolder    = document.getElementById('cam-placeholder');
+  const camStart     = document.getElementById('cam-start');
+  const camStop      = document.getElementById('cam-stop');
+  const camStatusLbl = document.getElementById('cam-status-lbl');
+  const detectBadge  = document.getElementById('detect-badge');
+
+  let stateEs = null;
+  let IS_DEMO = false;            // set by status poll
+  const camVideo  = document.getElementById('cam-video');
+  const camCanvas = document.getElementById('cam-canvas');
+
+  function showCamError(msg) {
+    camHolder.innerHTML = `<span style="color:var(--red);font-size:11px;line-height:2">
+      ╔═══════════════════════════╗<br>
+      ║   CAMERA ERROR            ║<br>
+      ╚═══════════════════════════╝<br><br>${msg.replace(/\n/g,'<br>')}`;
+    camHolder.style.display = 'block';
+    camImg.style.display = 'none';
+    camStatusLbl.textContent = 'ERROR';
+    camStatusLbl.className = 'offline';
+    camStart.disabled = false;
+    camStop.disabled = true;
+  }
+
+  /* ── Browser-side hand tracking (demo / cloud) ─────────
+     Runs MediaPipe entirely in the visitor's browser using their own webcam,
+     ports the same angle math as camera.py, and drives the on-screen hand. */
+  const HAND_CONNECTIONS = [
+    [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[0,9],[9,10],[10,11],[11,12],
+    [0,13],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17],
+  ];
+  const CAM_JOINTS = [[1,2,3],[5,6,7],[9,10,11],[13,14,15],[17,18,19]];
+
+  function camAngle3(a, b, c) {
+    const ax = a.x - b.x, ay = a.y - b.y, cx = c.x - b.x, cy = c.y - b.y;
+    const dot = ax * cx + ay * cy, mag = Math.hypot(ax, ay) * Math.hypot(cx, cy);
+    if (mag < 1e-8) return 0;
+    return Math.acos(Math.max(-1, Math.min(1, dot / mag))) * 180 / Math.PI;
+  }
+  function camToServo(deg) {
+    const c = Math.max(60, Math.min(175, deg)), r = (c - 60) / 115;
+    return Math.max(0, Math.min(180, Math.round((1 - r) * 180)));
+  }
+  const camCalcAngles = lm => CAM_JOINTS.map(([a, b, c]) => camToServo(camAngle3(lm[a], lm[b], lm[c])));
+
+  let landmarker = null, camStream = null, camRAF = null;
+
+  async function startBrowserCamera() {
+    camHolder.innerHTML = `<span style="color:var(--g-dim)">REQUESTING CAMERA…</span>`;
+    try {
+      camStream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
+    } catch (e) {
+      showCamError('Camera access denied or unavailable.\n→ Allow camera permission, then retry.');
+      return;
+    }
+    camVideo.srcObject = camStream;
+    await camVideo.play();
+
+    camHolder.innerHTML = `<span style="color:var(--g-dim)">LOADING TRACKER… (first load ~5s)</span>`;
+    try {
+      const vision = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14');
+      const fileset = await vision.FilesetResolver.forVisionTasks(
+        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
+      landmarker = await vision.HandLandmarker.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath:
+          'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task' },
+        runningMode: 'VIDEO', numHands: 1,
+        minHandDetectionConfidence: 0.6, minHandPresenceConfidence: 0.5, minTrackingConfidence: 0.5,
+      });
+    } catch (e) {
+      showCamError('Failed to load hand tracker.\n' + (e.message || e));
+      stopBrowserCamera();
+      return;
+    }
+
+    camHolder.style.display = 'none';
+    camCanvas.style.display = 'block';
+    camStatusLbl.textContent = 'LIVE'; camStatusLbl.className = 'live';
+    camStop.disabled = false;
+
+    const ctx = camCanvas.getContext('2d');
+    const loop = () => {
+      if (!landmarker || !camStream) return;
+      const w = camVideo.videoWidth, h = camVideo.videoHeight;
+      if (w && h) {
+        camCanvas.width = w; camCanvas.height = h;
+        ctx.save(); ctx.scale(-1, 1); ctx.translate(-w, 0);   // mirror like a selfie
+        ctx.drawImage(camVideo, 0, 0, w, h);
+        ctx.restore();
+
+        let detected = false, angles = [0, 0, 0, 0, 0], res = null;
+        try { res = landmarker.detectForVideo(camVideo, performance.now()); } catch (_) {}
+        if (res && res.landmarks && res.landmarks.length) {
+          detected = true;
+          const lm = res.landmarks[0];
+          angles = camCalcAngles(lm);
+          ctx.lineWidth = 2; ctx.strokeStyle = '#00882a'; ctx.fillStyle = '#00ff41';
+          for (const [a, b] of HAND_CONNECTIONS) {
+            ctx.beginPath();
+            ctx.moveTo((1 - lm[a].x) * w, lm[a].y * h);
+            ctx.lineTo((1 - lm[b].x) * w, lm[b].y * h);
+            ctx.stroke();
+          }
+          for (const p of lm) { ctx.beginPath(); ctx.arc((1 - p.x) * w, p.y * h, 4, 0, 6.3); ctx.fill(); }
+        }
+        setAngles(angles);
+        updateBars(angles, camBars);
+        detectBadge.textContent = detected ? 'HAND DETECTED' : 'NO HAND DETECTED';
+        detectBadge.className = 'detect-badge' + (detected ? ' on' : '');
+      }
+      camRAF = requestAnimationFrame(loop);
+    };
+    camRAF = requestAnimationFrame(loop);
+  }
+
+  function stopBrowserCamera() {
+    if (camRAF) { cancelAnimationFrame(camRAF); camRAF = null; }
+    if (landmarker) { try { landmarker.close(); } catch (_) {} landmarker = null; }
+    if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+    camVideo.srcObject = null;
+    camCanvas.style.display = 'none';
+  }
+
+  camStart.addEventListener('click', async () => {
+    camStart.disabled = true;
+    camHolder.innerHTML = `<span style="color:var(--g-dim)">INITIALIZING CAMERA…</span>`;
+
+    // Cloud demo: track in the browser. Local hardware: use the server camera.
+    if (IS_DEMO) { await startBrowserCamera(); return; }
+
+    let res;
+    try {
+      res = await fetch('/camera/start', { method: 'POST' }).then(r => r.json());
+    } catch (e) {
+      showCamError(`Network error: ${e.message}`);
+      return;
+    }
+
+    if (res.status === 'error') {
+      showCamError(res.error);
+      return;
+    }
+
+    // Show MJPEG feed
+    camImg.src = '/camera/feed?' + Date.now(); // cache-bust
+    camImg.style.display = 'block';
+    camHolder.style.display = 'none';
+
+    camStatusLbl.textContent = 'LIVE';
+    camStatusLbl.className = 'live';
+    camStop.disabled = false;
+
+    // Start angle SSE — also watch for runtime errors
+    stateEs = new EventSource('/camera/state');
+    stateEs.onmessage = e => {
+      const d = JSON.parse(e.data);
+      updateBars(d.angles, camBars);
+      detectBadge.textContent = d.detected ? 'HAND DETECTED' : 'NO HAND DETECTED';
+      detectBadge.className = 'detect-badge' + (d.detected ? ' on' : '');
+      if (d.error) {
+        stateEs.close(); stateEs = null;
+        showCamError(d.error);
+      }
+    };
+  });
+
+  camStop.addEventListener('click', async () => {
+    camStop.disabled = true;
+
+    if (IS_DEMO) {
+      stopBrowserCamera();
+    } else {
+      await fetch('/camera/stop', { method: 'POST' });
+      camImg.src = '';
+      camImg.style.display = 'none';
+    }
+    camHolder.style.display = 'block';
+
+    camStatusLbl.textContent = 'OFFLINE';
+    camStatusLbl.className = 'offline';
+    camStart.disabled = false;
+
+    if (stateEs) { stateEs.close(); stateEs = null; }
+    updateBars([0, 0, 0, 0, 0], camBars);
+    setAngles([0, 0, 0, 0, 0]);
+    detectBadge.textContent = 'NO HAND DETECTED';
+    detectBadge.className = 'detect-badge';
+  });
+
+  /* ── Chat ─────────────────────────────────────────────── */
+  const chat = document.getElementById('chat');
+  const inp  = document.getElementById('inp');
+  const btn  = document.getElementById('btn');
+
+  const ts = () => new Date().toLocaleTimeString('en-US', { hour12: false });
+
+  function addRow(type, label, body = '', streaming = false) {
+    const row   = document.createElement('div');
+    row.className = `row row-${type}`;
+    const lSpan = document.createElement('span');
+    lSpan.className = 'row-label';
+    lSpan.textContent = label;
+    const bSpan = document.createElement('span');
+    bSpan.className = 'row-body' + (streaming ? ' cursor' : '');
+    bSpan.textContent = body;
+    row.append(lSpan, bSpan);
+    chat.appendChild(row);
+    chat.scrollTop = chat.scrollHeight;
+    return bSpan;
+  }
+
+  async function send(text) {
+    text = text.trim();
+    if (!text) return;
+
+    inp.value = '';
+    inp.disabled = true;
+    btn.disabled = true;
+
+    chat.appendChild(Object.assign(document.createElement('hr'), { className: 'divider' }));
+    addRow('user', `[${ts()}] USER  ›`, text);
+
+    let agentSpan = null;
+
+    try {
+      const resp = await fetch('/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text }),
+      });
+
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+      const reader  = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let   buf     = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+
+        const lines = buf.split('\n');
+        buf = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          let ev;
+          try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+
+          switch (ev.type) {
+            case 'token':
+              if (!agentSpan) agentSpan = addRow('agent', `[${ts()}] AGENT ›`, '', true);
+              agentSpan.textContent += ev.content;
+              chat.scrollTop = chat.scrollHeight;
+              break;
+            case 'tool_call': {
+              if (agentSpan) { agentSpan.classList.remove('cursor'); agentSpan = null; }
+              let args = ev.args;
+              try { args = JSON.stringify(JSON.parse(ev.args)); } catch {}
+              addRow('tool', `[${ts()}] TOOL  ►`, `${ev.name}(${args})`);
+              break;
+            }
+            case 'tool_result':
+              addRow('result', `[${ts()}] RESULT◄`, ev.content);
+              break;
+            case 'hand':
+              setAngles(ev.angles);
+              break;
+            case 'error':
+              if (agentSpan) { agentSpan.classList.remove('cursor'); agentSpan = null; }
+              addRow('err', `[${ts()}] ERROR  `, ev.content);
+              break;
+            case 'done':
+              if (agentSpan) { agentSpan.classList.remove('cursor'); agentSpan = null; }
+              break;
+          }
+        }
+      }
+    } catch (err) {
+      if (agentSpan) agentSpan.classList.remove('cursor');
+      addRow('err', `[${ts()}] ERROR  `, err.message);
+    }
+
+    inp.disabled = false;
+    btn.disabled = false;
+    inp.focus();
+  }
+
+  btn.addEventListener('click', () => send(inp.value));
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(inp.value); }
+  });
+  document.querySelectorAll('.chip').forEach(c =>
+    c.addEventListener('click', () => send(c.dataset.cmd))
+  );
+
+  /* ── Status poll ─────────────────────────────────────── */
+  async function pollStatus() {
+    try {
+      const d = await fetch('/status').then(r => r.json());
+      IS_DEMO = !!d.demo;
+      const live = d.arduino === 'connected' || d.demo;
+      document.getElementById('dot-ard').className = 'dot' + (live ? ' on' : '');
+      document.getElementById('lbl-ard').textContent =
+        d.demo ? 'HAND: SIMULATED (DEMO)'
+        : d.arduino === 'connected' ? 'ARDUINO: ONLINE' : 'ARDUINO: OFFLINE';
+      document.getElementById('lbl-port').textContent =
+        d.demo ? 'MODE: LIVE DEMO'
+        : d.arduino === 'connected' ? `PORT: ${d.port}` : 'PORT: —';
+      document.getElementById('lbl-llm').textContent  = `LLM: ${d.model}`;
+    } catch {}
+  }
+
+  pollStatus();
+  setInterval(pollStatus, 6000);
+</script>
+</body>
+</html>

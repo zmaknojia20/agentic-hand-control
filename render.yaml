@@ -1,0 +1,19 @@
+# Render Blueprint — one-click deploy of the public hand-control demo.
+# In the Render dashboard: New → Blueprint → connect this repo. Then set the
+# LLM_API_KEY secret (your Groq key). Free tier; sleeps when idle, wakes on hit.
+services:
+  - type: web
+    name: agentic-hand-control
+    runtime: docker
+    plan: free
+    envVars:
+      - key: DEMO_MODE
+        value: "1"
+      # Groq is free, fast, and OpenAI-compatible (supports tool calling).
+      - key: LLM_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: MODEL_NAME
+        value: llama-3.3-70b-versatile
+      # Set this in the dashboard — do NOT commit your key.
+      - key: LLM_API_KEY
+        sync: false
